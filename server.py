@@ -13,7 +13,7 @@
 
 import os
 import logging
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -35,7 +35,9 @@ MAX_PROMPT_CHARS = 20000  # kötüye kullanım / aşırı token maliyetine karş
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "service": "HILUXA Astroloji Backend"})
-
+@app.route("/")
+def serve_index():
+    return send_from_directory(".", "index.html")
 
 @app.route("/api/chart", methods=["POST"])
 def api_chart():
