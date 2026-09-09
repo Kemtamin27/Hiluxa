@@ -246,7 +246,7 @@ def _calc_chiron_juno(jd_ut, sun_lon_deg):
     if _HAS_AST_FILES:
         try:
             cx, _ = swe.calc_ut(jd_ut, swe.CHIRON, FLG_SWISSEPH)
-            jx, _ = swe.calc_ut(jd_ut, swe.AST_OFFSET + 3, FLG_SWISSEPH)  # 3 = Juno
+            jx, _ = swe.calc_ut(jd_ut, swe.JUNO, FLG_SWISSEPH)  # swe.JUNO sabit tanımlayıcısı
             return {"Chiron": cx[0] % 360, "Juno": jx[0] % 360}, "swisseph"
         except Exception:
             pass
@@ -257,8 +257,12 @@ def _calc_chiron_juno(jd_ut, sun_lon_deg):
 def calc_houses(jd_ut, lat, lon, system=b"P"):
     """Placidus ev tepe noktaları (cusps), Yükselen (ASC) ve MC döner."""
     cusps, ascmc = swe.houses(jd_ut, lat, lon, system)
-    # cusps: (ev1..ev12) derece; ascmc: (ASC, MC, ARMC, Vertex, ...)
-    house_cusps = {str(i + 1): cusps[i] % 360 for i in range(12)}
+    # pysweph (13 eleman, index 0 boş) veya pyswisseph (12 eleman) sürüm farkı güvenliği
+    if len(cusps) >= 13 and (cusps[0] == 0.0 or abs(cusps[0]) < 1e-5) and cusps[1] != 0:
+        house_cusps = {str(i + 1): cusps[i + 1] % 360 for i in range(12)}
+    else:
+        house_cusps = {str(i + 1): cusps[i] % 360 for i in range(12)}
+        
     asc = ascmc[0] % 360
     mc = ascmc[1] % 360
     vertex = ascmc[3] % 360
