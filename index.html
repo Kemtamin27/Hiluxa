@@ -1581,8 +1581,12 @@ function getStelliums(chart) {
 // ══════════════════════════════════════════════
 // BACKEND API — GEZEGEN HESAPLAMA
 // ══════════════════════════════════════════════
-// Backend URL - Local geliştirme için
-const BACKEND_URL = 'http://localhost:3000';
+// Backend URL - sayfanın kendi adresini otomatik kullanır.
+// Yerelde çalıştırırken (python3 server.py -> localhost:3000) VE canlıda
+// (https://hiluxa.onrender.com) doğru adrese gitmesi için elle değiştirmeye
+// gerek kalmaz: index.html hangi adresten açılıyorsa (aynı Flask sunucusu
+// tarafından servis ediliyorsa) BACKEND_URL otomatik o adres olur.
+const BACKEND_URL = window.location.origin;
 
 
 async function calculateChart(year, month, day, hourStr, city) {
