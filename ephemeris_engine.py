@@ -27,6 +27,8 @@
 import os
 import math
 import swisseph as swe
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # ── Efemeris dosya yolu (varsa asteroid/JPL dosyaları buradan okunur) ──────
 _EPHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ephe")
@@ -97,7 +99,17 @@ CITY_COORDS = {
 "Zonguldak":(41.4564,31.7987),
 }
 
-TR_UTC_OFFSET = 3.0  # Türkiye tüm yıl UTC+3 (DST uygulanmıyor, 2016'dan beri sabit)
+TR_UTC_OFFSET = 3.0  # GERİYE DÖNÜK UYUMLULUK İÇİN TUTULUYOR - artık kullanılmıyor.
+# NOT: 2016 Eylül'ünden BERİ Türkiye tüm yıl sabit UTC+3 kullanıyor, DOĞRU.
+# Ama 2016'dan ÖNCE Türkiye yaz/kış saati (DST) uyguluyordu:
+#   - Yaz aylarında (~Mart sonu - Ekim sonu): UTC+3
+#   - Kış aylarında: UTC+2
+# Bu yüzden sabit +3 kullanmak, 2016 öncesi KIŞ doğumlarında saat başına kadar
+# hatalı sonuç verir (Ay, Yükselen, MC, ev tepe noktaları gibi zamana duyarlı
+# noktalarda burç/derece hatasına yol açar). Bunun yerine IANA saat dilimi
+# veritabanının (Europe/Istanbul) TÜM tarihsel geçişleri doğru bilen
+# zoneinfo modülünü kullanıyoruz - elle tarih listesi tutmaya gerek kalmıyor.
+TR_TZ = ZoneInfo("Europe/Istanbul")
 
 
 def get_zodiac_sign(deg: float) -> str:
@@ -135,8 +147,25 @@ def resolve_city(city: str):
     return CITY_COORDS["Ankara"]
 
 
-def local_to_julday_ut(year, month, day, hour_str, utc_offset=TR_UTC_OFFSET):
+def local_to_julday_ut(year, month, day, hour_str, utc_offset=None):
+    """Yerel (Türkiye) tarih/saati UT'ye çevirip Julian Day döndürür.
+
+    utc_offset=None (varsayılan, ÖNERİLEN): Europe/Istanbul saat dilimi
+        veritabanı kullanılır -> 2016 öncesi kış/yaz saati geçişleri dahil
+        HER tarih için doğru offset otomatik bulunur.
+    utc_offset=<sayı>: Elle sabit bir offset zorlamak isteyenler için
+        (ör. geriye dönük uyumluluk, test, ya da Türkiye dışı bir şehir
+        girildiğinde farklı bir ülke saat dilimi simüle etmek için).
+    """
     h, m = [int(x) for x in hour_str.split(":")]
+
+    if utc_offset is None:
+        local_dt = datetime(year, month, day, h, m, tzinfo=TR_TZ)
+        utc_dt = local_dt.astimezone(ZoneInfo("UTC"))
+        decimal_hour_ut = utc_dt.hour + utc_dt.minute / 60.0 + utc_dt.second / 3600.0
+        jd_ut = swe.julday(utc_dt.year, utc_dt.month, utc_dt.day, decimal_hour_ut, swe.GREG_CAL)
+        return jd_ut
+
     decimal_hour_local = h + m / 60.0
     decimal_hour_ut = decimal_hour_local - utc_offset
     jd_ut = swe.julday(year, month, day, decimal_hour_ut, swe.GREG_CAL)
@@ -246,7 +275,7 @@ def _calc_chiron_juno(jd_ut, sun_lon_deg):
     if _HAS_AST_FILES:
         try:
             cx, _ = swe.calc_ut(jd_ut, swe.CHIRON, FLG_SWISSEPH)
-            jx, _ = swe.calc_ut(jd_ut, swe.JUNO, FLG_SWISSEPH)  # swe.JUNO sabit tanımlayıcısı
+            jx, _ = swe.calc_ut(jd_ut, swe.AST_OFFSET + 3, FLG_SWISSEPH)  # 3 = Juno
             return {"Chiron": cx[0] % 360, "Juno": jx[0] % 360}, "swisseph"
         except Exception:
             pass
@@ -257,12 +286,8 @@ def _calc_chiron_juno(jd_ut, sun_lon_deg):
 def calc_houses(jd_ut, lat, lon, system=b"P"):
     """Placidus ev tepe noktaları (cusps), Yükselen (ASC) ve MC döner."""
     cusps, ascmc = swe.houses(jd_ut, lat, lon, system)
-    # pysweph (13 eleman, index 0 boş) veya pyswisseph (12 eleman) sürüm farkı güvenliği
-    if len(cusps) >= 13 and (cusps[0] == 0.0 or abs(cusps[0]) < 1e-5) and cusps[1] != 0:
-        house_cusps = {str(i + 1): cusps[i + 1] % 360 for i in range(12)}
-    else:
-        house_cusps = {str(i + 1): cusps[i] % 360 for i in range(12)}
-        
+    # cusps: (ev1..ev12) derece; ascmc: (ASC, MC, ARMC, Vertex, ...)
+    house_cusps = {str(i + 1): cusps[i] % 360 for i in range(12)}
     asc = ascmc[0] % 360
     mc = ascmc[1] % 360
     vertex = ascmc[3] % 360
@@ -286,7 +311,7 @@ def assign_house(planet_lon, house_cusps):
     return 1
 
 
-def compute_full_chart(year, month, day, hour_str, city, utc_offset=TR_UTC_OFFSET,
+def compute_full_chart(year, month, day, hour_str, city, utc_offset=None,
                         lat=None, lon=None, house_system=b"P"):
     """Doğum haritasının tamamını (gezegen dereceleri, burçları, evleri,
     ASC/MC/Vertex ve ev tepe noktalarını) hesaplayıp yapılandırılmış bir
